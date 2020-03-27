@@ -28,27 +28,27 @@ FIELDS_NAMES = {
     173: 'Field 8, 12'
 }
 FIELDS_MM_PER_PIXEL = {
-    21: 0.4}
-"""    
-    26: 0.5,
-    27: 0.7,
-    28: 0.5}
+    21: 0.4,
+}
+"""
+26: 0.5,
+27: 0.7,
+28: 0.5,
+30: 0.5,
+31: 0.4,
+33: 0.5,
+34: 0.5,
+35: 0.5,
+37: 0.4,
+38: 0.4,
+47: 0.4,
+147: 0.7,
+169: 0.5,
+170: 0.5,
+173: 0.5}
 
-    30: 0.5,
-    31: 0.4,
-    33: 0.5,
-    34: 0.5,
-    35: 0.5,
-    37: 0.4,
-    38: 0.4,
-    47: 0.4,
-    147: 0.7,
-    169: 0.5,
-    170: 0.5,
-    173: 0.5
-}"""
-IMAGE_WIDTH_PIXELS = 4864
-IMAGE_HEIGHT_PIXELS = 3648
+
+"""
 
 
 def profile(fnc):
@@ -74,7 +74,7 @@ def convert_cm_2_pixel(cm, mm_per_pixel):
 
 
 def convert_mm_2_pixel(mm, mm_per_pixel):
-    return int(mm // mm_per_pixel)
+    return mm / mm_per_pixel
 
 
 class Box:
@@ -100,8 +100,7 @@ class Cell:
 
 
 class Grid:
-    def __init__(self, cell_width_pixels, cell_height_pixels, grid_width_pixels=IMAGE_WIDTH_PIXELS,
-                 grid_height_pixels=IMAGE_HEIGHT_PIXELS):
+    def __init__(self, cell_width_pixels, cell_height_pixels, grid_width_pixels, grid_height_pixels):
         self.cell_width_pixels = cell_width_pixels
         self.cell_height_pixels = cell_height_pixels
         self.height_pixels = grid_height_pixels
@@ -117,12 +116,12 @@ class Grid:
         is_there_special_right_edges = self.right_edge_cell_width != 0
         is_there_special_bottom_edges = self.bottom_edge_cell_height != 0
 
-        amount_of_cells = [self.width_pixels // self.cell_width_pixels,
-                           self.height_pixels // self.cell_height_pixels]
-        if is_there_special_right_edges:
-            amount_of_cells = [amount_of_cells[0] + 1, amount_of_cells[1]]
-        if is_there_special_bottom_edges:
-            amount_of_cells = [amount_of_cells[0], amount_of_cells[1] + 1]
+        amount_of_cells = [math.ceil(self.width_pixels / self.cell_width_pixels),
+                           math.ceil(self.height_pixels / self.cell_height_pixels)]
+        # if is_there_special_right_edges:
+        #     amount_of_cells = [amount_of_cells[0] + 1, amount_of_cells[1]]
+        # if is_there_special_bottom_edges:
+        #     amount_of_cells = [amount_of_cells[0], amount_of_cells[1] + 1]
 
         for x in range(0, amount_of_cells[0]):
             _width = self.cell_width_pixels
@@ -143,59 +142,62 @@ class Grid:
         return self
 
 
-def is_valid_weed_box(weed_box):
-    if -10 < weed_box.x1 < 0:
-        weed_box.x1 = 0
-    if -10 < weed_box.y1 < 0:
-        weed_box.y1 = 0
-    if weed_box.x1 <= -10 or weed_box.y1 <= 10:
-        return False
-    if weed_box.x1 + weed_box.width > IMAGE_WIDTH_PIXELS:
-        return False
-    if weed_box.y1 + weed_box.height > IMAGE_HEIGHT_PIXELS:
-        return False
-    return True
-
-
 class Image:
-    def __init__(self, image_id, weed_boxes, grid=None):
+    def __init__(self, image_id, weed_boxes, image_width_pixels, image_height_pixels, grid=None):
         self.id = image_id
         self.weed_boxes = weed_boxes
         self.grid = grid
+        self.width_pixels = image_width_pixels
+        self.height_pixels = image_height_pixels
 
     def find_grid_cells_intersect(self, weed_box):
-        grid_width = self.grid.base_cell.width_pixels
-        grid_height = self.grid.base_cell.height_pixels
+        grid_cell_width = self.grid.base_cell.width_pixels
+        grid_cell_height = self.grid.base_cell.height_pixels
 
-        cells_in_x_axis = math.ceil(weed_box.width / grid_width) + 1
-        cells_in_y_axis = math.ceil(weed_box.height / grid_height) + 1
+        x_start = weed_box.x1 - (weed_box.x1 % grid_cell_width)
+        x_end = weed_box.x1 + weed_box.width - ((weed_box.x1 + weed_box.width) % grid_cell_width)
+        x_coordinates = np.arange(x_start, x_end + 1, grid_cell_width)
 
-        x_start = weed_box.x1 - (weed_box.x1 % grid_width)
-        x_end = weed_box.x1 + weed_box.width - ((weed_box.x1 + weed_box.width) % grid_width)
-        x_coordinates = range(x_start, x_end + 1, grid_width)
-
-        y_start = weed_box.y1 - (weed_box.y1 % grid_height)
-        y_end = weed_box.y1 + weed_box.height - ((weed_box.y1 + weed_box.height) % grid_height)
-        y_coordinates = range(y_start, y_end + 1, grid_height)
+        y_start = weed_box.y1 - (weed_box.y1 % grid_cell_height)
+        y_end = weed_box.y1 + weed_box.height - ((weed_box.y1 + weed_box.height) % grid_cell_height)
+        y_coordinates = np.arange(y_start, y_end + 1, grid_cell_height)
 
         return {(x, y): self.grid.cells.get((x, y)) for x in x_coordinates for y in y_coordinates}
-
-        # return {self.grid.cells.get(coordinate) for coordinate in coordinates}
 
     def calculate_image_spraying_present(self):
         sprayed_area = self.get_image_sprayed_area()
         image_area = self.grid.height_pixels * self.grid.width_pixels
         return 100 * (sprayed_area / image_area)
 
+    def is_valid_weed_box(self, weed_box):
+        if -10 < weed_box.x1 < 0:
+            weed_box.x1 = 0
+        if -10 < weed_box.y1 < 0:
+            weed_box.y1 = 0
+        if weed_box.x1 <= -10 or weed_box.y1 <= 10:
+            return False
+        if weed_box.x1 + weed_box.width > self.width_pixels:
+            return False
+        if weed_box.y1 + weed_box.height > self.height_pixels:
+            return False
+        return True
+
     def get_image_sprayed_area(self):
-        sprayed_cells = {}
-        for weed_box in self.weed_boxes:
-            if is_valid_weed_box(weed_box):
-                intersected_cells = self.find_grid_cells_intersect(weed_box)
-                sprayed_cells.update(intersected_cells)
+        if self.id == 98193:
+            print("f")
+        sprayed_cells = [list(self.find_grid_cells_intersect(weed_box).values()) for weed_box in self.weed_boxes if
+                         self.is_valid_weed_box(weed_box)]
+        sprayed_cells = [cell for cells in sprayed_cells for cell in cells]
+        # sprayed_cells = {}
+        # for weed_box in self.weed_boxes:
+        #     if is_valid_weed_box(weed_box):
+        #         intersected_cells = self.find_grid_cells_intersect(weed_box)
+        #         sprayed_cells.update(intersected_cells)
 
         sprayed_area = 0
-        for cell in sprayed_cells.values():
+        for cell in sprayed_cells:
+            if cell is None:
+                print("G")
             sprayed_area += cell.width_pixels * cell.height_pixels
 
         return sprayed_area
@@ -207,24 +209,31 @@ class Field:
         self.grid_cell_width = grid_cell_width
         self.grid_cell_height = grid_cell_height
         self.data_base = db
+        self.spread_area = 0
+        self.area = 0
 
         self.images = {}
 
     def build(self):
         field_data = self.data_base[self.data_base['fieldId'] == self.id]
 
+        # create weed boxes objects, grid and images objects:
         for index, row in field_data.iterrows():
+            image_weeds_raw = json.loads(row["weeds"])
+            image_weeds = [Box(weed) for weed in image_weeds_raw]
 
-            image_weed_boxes = []
-            image_weeds_data = json.loads(row["weeds"])
+            image_width_pixels, image_height_pixels = get_image_pixels(self.id)
+            grid = Grid(self.grid_cell_width, self.grid_cell_height, image_width_pixels, image_height_pixels).build()
 
-            for weed in image_weeds_data:
-                box = Box(weed)
-                image_weed_boxes.append(box)
-
-            grid = Grid(self.grid_cell_width, self.grid_cell_height, IMAGE_WIDTH_PIXELS, IMAGE_HEIGHT_PIXELS).build()
-            image_obj = Image(row['id'], image_weed_boxes, grid)
+            image_obj = Image(row['id'], image_weeds, image_width_pixels, image_height_pixels, grid)
             self.images.update({image_obj.id: image_obj})
+
+        # calculate field area:
+        for image in self.images.values():
+            self.area += image.width_pixels * image.height_pixels
+
+        # calculate spread area:
+        self.spread_area = self.get_field_sprayed_area()
         return self
 
     def get_field_sprayed_area(self):
@@ -244,21 +253,26 @@ class Field:
         return 100 * (sprayed_area / field_area)
 
 
-# @profile
-def build_all_cell_sizes_of_field(_field_id):
+def build_all_instances_of_field(_field_id):
     mm_per_pixel = FIELDS_MM_PER_PIXEL[_field_id]
     widths = heights = [i for i in range(5, 105, 5)]
 
-    all_sizes = {}
+    all_sizes = {cell_height_cm: [Field(_field_id, convert_cm_2_pixel(cell_width_cm, mm_per_pixel),
+                                        convert_cm_2_pixel(cell_height_cm, mm_per_pixel), data_base).build()
+                                  for cell_width_cm in widths]
+                 for cell_height_cm in heights}
 
-    for cell_height_cm in heights:
-        cell_height_pixels = convert_cm_2_pixel(cell_height_cm, mm_per_pixel)
-        fields_with_same_cell_width = []
-        for cell_width_cm in widths:
-            cell_width_pixels = convert_cm_2_pixel(cell_width_cm, mm_per_pixel)
-            field = Field(_field_id, cell_width_pixels, cell_height_pixels, data_base).build()
-            fields_with_same_cell_width.append(field)
-        all_sizes[cell_height_cm] = fields_with_same_cell_width
+    # for cell_height_cm in heights:
+    #     cell_height_pixels = convert_cm_2_pixel(cell_height_cm, mm_per_pixel)
+    #     fields_with_same_cell_width = [Field(_field_id, convert_cm_2_pixel(cell_width_cm, mm_per_pixel),
+    #                                          convert_cm_2_pixel(cell_height_cm, mm_per_pixel), data_base)
+    #                                    for cell_width_cm in widths]
+    # fields_with_same_cell_width = []
+    # for cell_width_cm in widths:
+    #     cell_width_pixels = convert_cm_2_pixel(cell_width_cm, mm_per_pixel)
+    #     field = Field(_field_id, cell_width_pixels, cell_height_pixels, data_base).build()
+    #     fields_with_same_cell_width.append(field)
+    # all_sizes[cell_height_cm] = fields_with_same_cell_width
     return all_sizes
 
 
@@ -279,9 +293,9 @@ def get_image_percentss(_field_id, image_id):
 def get_field_percentss(_field_id, all_sizes):
     all_fields_sizes = all_sizes
     percentss = {}
-    for height, fields_with_same_height_cells in all_fields_sizes.items():
+    for height, all_same_height_cells_of_field in all_fields_sizes.items():
         percents = []
-        for field in fields_with_same_height_cells:
+        for field in all_same_height_cells_of_field:
             percent = field.calculate_field_spraying_percent()
             percents.append(percent)
 
@@ -305,6 +319,7 @@ def plot(_field_id, image_id=None):
     # Create a figure with customized size
     fig = plt.figure(figsize=(15, 15), constrained_layout=True)
     gs = fig.add_gridspec(6, 6)
+    widths = heights = [i for i in range(5, 105, 5)]
 
     # ***************** 2D CHART **********************************************
 
@@ -313,43 +328,43 @@ def plot(_field_id, image_id=None):
     # for each height, plot the chart of percents, with error bar of STDV
     percentss = fields_dict[_field_id]['percentss']
     for height, percents in percentss.items():
-        if height % 10 in [0, 1]:
+        if height % 10 in [0, 1]:  # plot only the lines with height 10,20,30...
             stdv = round(float(np.std(percents, axis=0, dtype=np.float64)), 2)
-            chart_2d.plot([i for i in range(5, 105, 5)], percents, label="height:{} (stdv:{})".format(height, stdv))
+            chart_2d.plot(widths, percents, label="height:{} (stdv:{})".format(height, stdv))
+
+    # plot the mean:
+    chart_2d.plot(widths, fields_dict[_field_id]['mean'], label='mean of field', lw=2, color='k', ls='--')
+    # plot mean of means:
+    chart_2d.plot(widths, fields_dict['mean_of_means'], label='mean of all fields', lw=2, color='gray', ls='--')
 
     # plot chart properties:
     chart_2d.set_xlabel('cell width', fontsize=14)
     chart_2d.set_ylabel('percent', fontsize=18)
-    xaxis_ticks = [i for i in range(5, 105, 5)]
-    yaxis_ticks = [i for i in range(5, 105, 5)]
-    chart_2d.set_xticks(xaxis_ticks)
-    chart_2d.set_yticks(yaxis_ticks)
+    chart_2d.set_xticks(widths)
+    chart_2d.set_yticks(heights)
     chart_2d.legend(ncol=1, loc='upper left', title='cell height', fontsize='large')
     chart_2d.grid()
 
     # ********************* 3D CHART  *******************************************
     chart_3d = fig.add_subplot(gs[:2, -2:], projection='3d')
-    # chart_3d.set_title('3D')
 
-    x = y = [i for i in range(5, 105, 5)]
-    x, y = np.meshgrid(x, y)
+    # Plot the surface:
+    x, y = np.meshgrid(widths, heights)
     z = np.array(list(percentss.values()))
-    # Plot the surface.
     surf = chart_3d.plot_surface(x, y, z, linewidth=0, antialiased=False, cmap='viridis')
     # Add a color bar which maps values to colors.
     fig.colorbar(surf, shrink=0.5, aspect=5)
     # configure axes
-    chart_3d.set_xlim3d(0, 100)
-    chart_3d.set_ylim3d(0, 100)
-    chart_3d.set_zlim3d(0, 100)
     chart_3d.set_xlabel("width")
+    chart_3d.set_xlim3d(0, 100)
     chart_3d.set_ylabel("height")
+    chart_3d.set_ylim3d(0, 100)
     chart_3d.set_zlabel("percents")
+    chart_3d.set_zlim3d(0, 100)
 
     # ******************** symmetry table ***************************************
     symmetry_table = fig.add_subplot(gs[-2:, :2])
     symmetry_table.set_title('Symmetry table', fontsize=20)
-    sym_indexes = [20, 40, 60, 80, 100]
     table_data = [[round(x) for x in row][3::4] for row in list(percentss.values())][3::4]  # only 20,40,60,...
     cols = ["h:{}".format(x) for x in list(percentss.keys())[3::4]]  # only 20,40,60,...
     rows = ["w:{}".format(x) for x in list(percentss.keys())[3::4]]  # only 20,40,60,...
@@ -382,8 +397,8 @@ def plot(_field_id, image_id=None):
                 stdv = round(float(np.std(percents, axis=0, dtype=np.float64)), 1)
                 image_example[0].plot([i for i in range(5, 105, 5)], percents, label="{}({})".format(height, stdv))
 
-        image_example[0].set_xticks(xaxis_ticks)
-        image_example[0].set_yticks(yaxis_ticks)
+        image_example[0].set_xticks(widths)
+        image_example[0].set_yticks(heights)
         image_example[0].legend(ncol=1, loc='upper left', title='cell height', fontsize='xx-small')
         image_example[0].grid()
 
@@ -392,9 +407,12 @@ def plot(_field_id, image_id=None):
     plt.savefig((get_title(_field_id, image_id)))
 
     # Show the image, and clear
-    plt.tight_layout()
+    # plt.tight_layout()
     plt.show()
     plt.clf()
+
+
+# def plot_all_fields():
 
 
 def get_image_pixels(_field_id):
@@ -402,24 +420,43 @@ def get_image_pixels(_field_id):
     return field_data_entry['width'].iloc[0], field_data_entry['height'].iloc[0]
 
 
+def get_field_mean_line(percents):
+    return np.array([row for row in percents.values()]).mean(0)
+
+
+@profile
+def build_all_fields_with_all_sizes():
+    fields_dict_ = {}
+    for field_id, mm_per_pixel in list(FIELDS_MM_PER_PIXEL.items()):
+        field_instances = build_all_instances_of_field(field_id)
+        percentss = get_field_percentss(field_id, field_instances)
+        mean = get_field_mean_line(percentss)
+        fields_dict_[field_id] = {'mm_per_pixel': mm_per_pixel, 'image_pixels': get_image_pixels(field_id),
+                                  'all_sizes': field_instances, 'percentss': percentss, 'mean': mean,
+                                  'name': FIELDS_NAMES[field_id]}
+
+    # calculate mean of means:
+    fields_dict_['mean_of_means'] = np.mean([row['mean'] for row in fields_dict_.values()], 0)
+    return fields_dict_
+
+
 def main():
     for field_id in list(FIELDS_MM_PER_PIXEL.keys()):
         plot(field_id)
 
 
-def build_all_fields_with_all_sizes():
-    fields_dict_ = {}
-    for field_id, mm_per_pixel in list(FIELDS_MM_PER_PIXEL.items()):
-        all_sizes = build_all_cell_sizes_of_field(field_id)
-        percentss = get_field_percentss(field_id, all_sizes)
-        fields_dict_[field_id] = {'mm_per_pixel': mm_per_pixel, 'image_pixels': get_image_pixels(field_id),
-                                  'all_sizes': all_sizes, 'percentss': percentss, 'name': FIELDS_NAMES[field_id]}
-
-    return fields_dict_
-
-
 if __name__ == "__main__":
-    # data_base = pd.read_csv('db/farmer_tool_prod_fieldphotos_with_headers.csv')
     data_base = pd.read_csv('db/farmer_tool_prod_fieldphotos_with_headers.csv')
     fields_dict = build_all_fields_with_all_sizes()
-    main()
+    for id, fields in fields_dict.items():
+        if isinstance(id, int):
+            print("--------------- field id: {} - {} ----------------------".format(id, fields['name']))
+            # for height, instances in fields['all_sizes'].items():
+            #     for instance in instances:
+            #         for image in instance.images:
+            #             print(len(image.grid.cells.vealues()))
+            print("num of grid cells: {}".format(
+                [len(image.grid.cells.values()) for instances in fields['all_sizes'].values() for instance in instances
+                 for image in instance.images.values()]))
+
+main()
